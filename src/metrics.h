@@ -73,6 +73,90 @@ class CompanyMetrics {
 
   std::string get_company_name();
 };
+
+using namespace std;
+
+struct Metric {
+    const shared_ptr<string> name;
+    const shared_ptr<string> description;
+
+    Metric(
+        const shared_ptr<string> _name, 
+        const shared_ptr<string> _description
+    ) : name{_name}, description{_description} {};
+};
+
+struct Label {
+    const string name;
+    const string value;
+};
+
+template<typename T, T initial>
+struct ScalarMetric : public Metric {
+    const vector<Label> labels;
+    T value {initial};
+
+    template<size_t C>
+    ScalarMetric(
+        const shared_ptr<string> _name, 
+        const shared_ptr<string> _description, 
+        const vector<Label> _labels
+    ) : Metric(_name, _description), labels{_labels} {};
+
+    ~ScalarMetric() {
+        delete labels;
+    }
+};
+
+struct CounterMetric : public ScalarMetric<unsigned long, 0UL> {
+    void increase(unsigned long by = 1) {
+        value += by;
+    }
+};
+
+class GaugeMetric : public ScalarMetric<long, 0L> {
+    void increase(unsigned long by = 1) {
+        value += by;
+    }
+
+    void decrease(unsigned long by = 1) {
+        value -= by;
+    }
+};
+
+using BucketLabel = std::string;
+using BucketValue = unsigned long;
+
+struct HistogramBucket {
+    const BucketLabel label;
+    const BucketValue value;
+};
+
+class HistogramMetric : public Metric {
+    private: 
+        BucketValue lastSum = 0;
+        bool recountSum = true;
+    protected:
+        vector<HistogramBucket> value {};
+    public: 
+        void addBucket(HistogramBucket bucket);
+        void removeBucket(BucketLabel label);
+
+        BucketValue getSum();
+        size_t getCount();
+};
+
+class MetricsSerializer {
+    private:
+        vector<string> printedMeta;
+    public:
+        template<typename T, T I>
+        string MetricsSerializer::serialize(shared_ptr<ScalarMetric<T, I>> metric);
+
+        string serialize(shared_ptr<HistogramMetric> metric);
+};
+
+
 }  // namespace prom
 
 #endif /* METRICS_H */

@@ -159,11 +159,13 @@ CompanyMetrics::CompanyMetrics(char *name) {
         break;
     }
 
-    this->vehicles_owned_family_gauges[vehicle_type] =
-        std::shared_ptr<prometheus::Gauge>(
-            &vehicles_owned_family.Add({{"game", game_name},
-                                        {"company", this->name},
-                                        {"transport_type", transport_type}}));
+    this->vehicles_owned_family_gauges[vehicle_type] = std::shared_ptr<prometheus::Gauge>(
+      &vehicles_owned_family.Add({
+        {"game", game_name},
+        {"company", this->name}, 
+        {"transport_type", transport_type}
+      })
+    );
 
     const CargoSpec *cargo;
     FOR_ALL_CARGOSPECS(cargo) {
@@ -231,5 +233,69 @@ void CompanyMetrics::update_bank_balance(Money money, Money current_loan) {
 }
 
 std::string CompanyMetrics::get_company_name() { return this->name; }
+
+// New metrics
+
+void HistogramMetric::addBucket(HistogramBucket bucket) {
+    value.push_back(bucket);
+    recountSum = true;
+}
+
+void HistogramMetric::removeBucket(BucketLabel label) {
+    for(vector<HistogramBucket>::iterator it = value.begin(); it != value.end(); ++it) {
+        if (it->label == label) {
+            value.erase(it);
+        }
+    }
+    recountSum = true;
+}
+
+BucketValue HistogramMetric::getSum() {
+    if (!recountSum) {
+        return lastSum;
+    }
+
+    BucketValue sum = 0;
+    
+    for_each(value.begin(), value.end(), [&sum] (HistogramBucket n) {
+        sum += n.value;
+    });
+
+    lastSum = sum;
+    recountSum = false;
+    return sum;
+}
+
+size_t HistogramMetric::getCount() {
+    return value.size();
+}
+
+template<typename T, T I>
+string MetricsSerializer::serialize(shared_ptr<ScalarMetric<T, I>> metric) {
+    /*
+      # HELP openttd_expenses_money how much money this player has spent
+      # TYPE openttd_expenses_money counter
+      openttd_expenses_money{company="Adko",game="openttd-23-04-2020-00-28-55"} 93094153.000000
+      openttd_expenses_money{company="derki",game="openttd-23-04-2020-00-28-55"} 90441512.000000
+      openttd_expenses_money{company="Player",game="openttd-23-04-2020-00-28-55"} 64117507.000000
+      openttd_expenses_money{company="eufebius",game="openttd-23-04-2020-00-28-55"} 1253487731.000000  
+    */
+    ostringstream result;
+    result << *metric->name << "{";
+    bool is_first = true;
+    for_each(metric->labels.begin(), metric->labels.end(), [&] (Label label) {
+        if (!is_first) {
+            result << ",";
+        }
+
+        result << label.name << "=" << label.value;
+        is_first = false;
+    });
+    result << "} ";
+    
+    result << metric->value;
+
+    return result.str();
+}
 
 }  // namespace prom
